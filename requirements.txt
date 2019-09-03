@@ -1,0 +1,6 @@
+boto3==1.9.213
+flask==1.1.1
+keras==2.2.4
+gevent==1.4.0
+gunicorn==19.9.0
+numpy==1.15.2
