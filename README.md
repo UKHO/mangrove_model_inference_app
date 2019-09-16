@@ -4,7 +4,7 @@ Model is a TensorFlow model in our S3 buckets
 
 Endpoint is set up without Elastic Inference on a ml.m4.xlarge instance
 
-Invoking the endpoint in a manner that somewhat simulates multiple hits from Lambda:
+Invoking the endpoint in a manner that somewhat simulates multiple hits from Lambda (Now with new sessions per worker when invoking):
 
 ```
 import boto3
@@ -27,6 +27,8 @@ response = s3.list_objects_v2(
 [paths.append(path['Key']) for path in response]
 
 def invoke_endpoint(thing):
+    session = boto3.session.Session()
+    sm = session.client('sagemaker-runtime', aws_access_key_id='', aws_secret_access_key='', region_name='eu-west-2')
     sm.invoke_endpoint(
         EndpointName='aws-debug',
         ContentType='application/json',
@@ -42,71 +44,105 @@ with PoolExecutor(max_workers=4) as executor:
 This results in logs such as:
 
 ```
-10.32.0.2 - - [03/Sep/2019:12:41:00 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:41:05 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:41:10 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-8/21 [==========>...................] - ETA: 1:27
-2019/09/03 12:42:13 [error] 16#16: *160 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
-8/21 [==========>...................] - ETA: 1:3310.32.0.2 - - [03/Sep/2019:12:42:13 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
-2019/09/03 12:42:13 [error] 16#16: *239 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:42:13 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
-2019/09/03 12:42:13 [error] 16#16: *241 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:42:13 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
-2019/09/03 12:42:13 [error] 16#16: *243 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:42:13 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
-8/21 [==========>...................] - ETA: 1:35
-[2019-09-03 12:42:14 +0000] [15] [CRITICAL] WORKER TIMEOUT (pid:24)
-[2019-09-03 12:42:14 +0000] [15] [CRITICAL] WORKER TIMEOUT (pid:19)
-[2019-09-03 12:42:14 +0000] [15] [CRITICAL] WORKER TIMEOUT (pid:20)
-[2019-09-03 12:42:14 +0000] [15] [CRITICAL] WORKER TIMEOUT (pid:23)
-2019/09/03 12:42:15 [error] 16#16: *245 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "GET /ping HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/ping", host: "model.aws.local:8080"
-8/21 [==========>...................] - ETA: 1:3610.32.0.2 - - [03/Sep/2019:12:42:15 +0000] "GET /ping HTTP/1.1" 504 192 "-" "AHC/2.0"
-[2019-09-03 12:42:16 +0000] [191] [INFO] Booting worker with pid: 191
-[2019-09-03 12:42:16 +0000] [193] [INFO] Booting worker with pid: 193
-[2019-09-03 12:42:16 +0000] [195] [INFO] Booting worker with pid: 195
-[2019-09-03 12:42:16 +0000] [197] [INFO] Booting worker with pid: 197
+10.32.0.2 - - [16/Sep/2019:13:16:59 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:17:04 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:17:09 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:17:14 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:17:19 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+8/20 [===========>..................] - ETA: 1:22
+8/20 [===========>..................] - ETA: 1:22
+8/20 [===========>..................] - ETA: 1:25
+8/20 [===========>..................] - ETA: 1:2510.32.0.2 - - [16/Sep/2019:13:18:20 +0000] "POST /invocations HTTP/1.1" 499 0 "-" "AHC/2.0"
+2019/09/16 13:18:20 [error] 18#18: *53 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+2019/09/16 13:18:20 [error] 18#18: *55 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:18:20 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:20 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019/09/16 13:18:20 [error] 18#18: *57 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:18:20 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+[2019-09-16 13:18:22 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:24)
+[2019-09-16 13:18:22 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:21)
+[2019-09-16 13:18:23 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:22)
+[2019-09-16 13:18:23 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:23)
+[2019-09-16 13:18:24 +0000] [193] [INFO] Booting worker with pid: 193
+[2019-09-16 13:18:24 +0000] [194] [INFO] Booting worker with pid: 194
+2019/09/16 13:18:24 [error] 18#18: *59 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "GET /ping HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/ping", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:18:24 +0000] "GET /ping HTTP/1.1" 504 192 "-" "AHC/2.0"
+[2019-09-16 13:18:24 +0000] [196] [INFO] Booting worker with pid: 196
+[2019-09-16 13:18:24 +0000] [197] [INFO] Booting worker with pid: 197
 Using TensorFlow backend.
 Using TensorFlow backend.
 Using TensorFlow backend.
 Using TensorFlow backend.
-2019-09-03 12:42:20.156207: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
-2019/09/03 12:42:20 [error] 16#16: *247 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "GET /ping HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/ping", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:42:20 +0000] "GET /ping HTTP/1.1" 504 192 "-" "AHC/2.0"
-2019-09-03 12:42:21.491548: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
-2019/09/03 12:42:25 [error] 16#16: *249 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "GET /ping HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/ping", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:42:25 +0000] "GET /ping HTTP/1.1" 504 192 "-" "AHC/2.0"
-2019-09-03 12:42:26.856832: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:27 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:28 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:29 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-2019-09-03 12:42:32.223731: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
-10.32.0.2 - - [03/Sep/2019:12:42:35 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:39 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:40 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:45 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:45 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-8/21 [==========>...................] - ETA: 30s10.32.0.2 - - [03/Sep/2019:12:42:50 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:42:55 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:43:00 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-16/21 [=====================>........] - ETA: 10s10.32.0.2 - - [03/Sep/2019:12:43:05 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:43:10 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-21/21 [==============================] - 42s 2s/step
-10.32.0.2 - - [03/Sep/2019:12:43:11 +0000] "POST /invocations HTTP/1.1" 200 15 "-" "AHC/2.0"
-2019/09/03 12:43:14 [error] 16#16: *241 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:43:14 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
-2019/09/03 12:43:14 [error] 16#16: *239 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
-10.32.0.2 - - [03/Sep/2019:12:43:14 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:43:14 +0000] "POST /invocations HTTP/1.1" 499 0 "-" "AHC/2.0"
-10.32.0.2 - - [03/Sep/2019:12:43:15 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
-8/21 [==========>...................] - ETA: 1:15
+2019-09-16 13:18:28.439024: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2019/09/16 13:18:29 [error] 18#18: *61 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "GET /ping HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/ping", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:18:29 +0000] "GET /ping HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019-09-16 13:18:30.033489: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2019/09/16 13:18:34 [error] 18#18: *63 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "GET /ping HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/ping", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:18:34 +0000] "GET /ping HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019-09-16 13:18:35.440129: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:38 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:39 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:44 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:45 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:49 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:18:54 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+8/20 [===========>..................] - ETA: 23s10.32.0.2 - - [16/Sep/2019:13:18:59 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:04 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+2019-09-16 13:19:10.690635: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+16/20 [=======================>......] - ETA: 7s 10.32.0.2 - - [16/Sep/2019:13:19:12 +0000] "GET /ping HTTP/1.1" 499 0 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:14 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+20/20 [==============================] - 39s 2s/step
+10.32.0.2 - - [16/Sep/2019:13:19:19 +0000] "POST /invocations HTTP/1.1" 200 15 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:19 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+2019/09/16 13:19:21 [error] 18#18: *85 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:19:21 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019/09/16 13:19:21 [error] 18#18: *87 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:19:21 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019/09/16 13:19:21 [error] 18#18: *89 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:19:21 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:24 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:29 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:34 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:39 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+[2019-09-16 13:19:40 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:194)
+[2019-09-16 13:19:41 +0000] [365] [INFO] Booting worker with pid: 365
+10.32.0.2 - - [16/Sep/2019:13:19:44 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+Using TensorFlow backend.
+10.32.0.2 - - [16/Sep/2019:13:19:49 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+2019-09-16 13:19:57.152926: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+8/20 [===========>..................] - ETA: 51s10.32.0.2 - - [16/Sep/2019:13:19:57 +0000] "GET /ping HTTP/1.1" 499 0 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:19:59 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+8/20 [===========>..................] - ETA: 51s10.32.0.2 - - [16/Sep/2019:13:20:04 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:20:09 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:20:14 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:20:19 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+2019/09/16 13:20:19 [error] 18#18: *83 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:20:19 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+[2019-09-16 13:20:20 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:197)
+[2019-09-16 13:20:22 +0000] [404] [INFO] Booting worker with pid: 404
+2019/09/16 13:20:22 [error] 18#18: *89 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:20:22 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019/09/16 13:20:23 [error] 18#18: *87 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:20:23 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+2019/09/16 13:20:23 [error] 18#18: *85 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 10.32.0.2, server: , request: "POST /invocations HTTP/1.1", upstream: "http://unix:/tmp/gunicorn.sock/invocations", host: "model.aws.local:8080"
+10.32.0.2 - - [16/Sep/2019:13:20:23 +0000] "POST /invocations HTTP/1.1" 504 192 "-" "AHC/2.0"
+10.32.0.2 - - [16/Sep/2019:13:20:24 +0000] "GET /ping HTTP/1.1" 200 1 "-" "AHC/2.0"
+[2019-09-16 13:20:27 +0000] [17] [CRITICAL] WORKER TIMEOUT (pid:193)
+Using TensorFlow backend.
+[2019-09-16 13:20:28 +0000] [417] [INFO] Booting worker with pid: 417
+2019-09-16 13:20:32.229222: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+Using TensorFlow backend.
+
 ```
 
 This time out behaviour was not observed when predictions aren't actually performed (e.g) Line `59` in `predictor.py` is commented out
