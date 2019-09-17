@@ -399,5 +399,3 @@ ModelError: An error occurred (ModelError) when calling the InvokeEndpoint opera
 </html>
 ". See https://eu-west-2.console.aws.amazon.com/cloudwatch/home?region=eu-west-2#logEventViewer:group=/aws/sagemaker/Endpoints/aws-debug 
 ```
-
-This time out behaviour was not observed when predictions aren't actually performed (e.g) Line `59` in `predictor.py` is commented out
